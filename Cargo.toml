@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
 crossterm = "0.29.0"
+dirs = "5.0"
 ratatui = "0.30.0"
 reqwest = { version = "0.13.1", features = ["blocking"] }
 scraper = "0.25.0"

@@ -22,7 +22,7 @@ pub fn ui(frame: &mut Frame, app: &mut App) {
         .split(frame.area());
 
     // Render header
-    render_header(frame, chunks[0]);
+    render_header(frame, app, chunks[0]);
 
     // Render main content area (loading screen or movie list)
     if app.loading_movies {

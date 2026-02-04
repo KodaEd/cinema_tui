@@ -56,7 +56,9 @@ fn run_app<B: Backend + 'static>(
                 }
                 Ok(MovieFetchMessage::Complete(movie_times)) => {
                     app.ritz_movie_times = movie_times;
+                    app.last_updated = Some(chrono::Local::now());
                     app.update_available_dates();
+                    app.save_cache();
                     app.loading_movies = false;
                     app.loading_messages.clear();
                     app.receiver = None;

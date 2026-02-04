@@ -15,7 +15,7 @@ use ratatui::crossterm::terminal::{
 };
 use ratatui::prelude::{Backend, CrosstermBackend};
 
-use crate::app::{CurrentScreen, MovieFetchMessage};
+use crate::app::{CurrentScreen, MovieFetchMessage, MovieDetailMessage, PosterMessage};
 
 fn main() -> Result<(), Box<dyn Error>> {
     // setup terminal
@@ -75,6 +75,51 @@ fn run_app<B: Backend + 'static>(
                 }
             }
         }
+
+        // Check for movie detail messages
+        if let Some(receiver) = &app.detail_receiver {
+            match receiver.try_recv() {
+                Ok(MovieDetailMessage::Complete(details)) => {
+                    // Check if poster is available and fetch it
+                    let poster_url = details.poster.clone();
+                    app.selected_movie_detail = Some(details);
+                    app.loading_movie_detail = false;
+                    app.detail_receiver = None;
+                    
+                    // Fetch poster if URL is valid
+                    if poster_url != "N/A" && !poster_url.is_empty() {
+                        app.fetch_poster(poster_url);
+                    }
+                }
+                Ok(MovieDetailMessage::Error(error)) => {
+                    app.movie_detail_error = Some(error);
+                    app.loading_movie_detail = false;
+                    app.detail_receiver = None;
+                }
+                Err(_) => {
+                    // No message available, continue
+                }
+            }
+        }
+
+        // Check for poster messages
+        if let Some(receiver) = &app.poster_receiver {
+            match receiver.try_recv() {
+                Ok(PosterMessage::Complete(protocol)) => {
+                    app.poster_protocol = Some(protocol);
+                    app.loading_poster = false;
+                    app.poster_receiver = None;
+                }
+                Ok(PosterMessage::Error(_)) => {
+                    // Silent fail - poster is optional
+                    app.loading_poster = false;
+                    app.poster_receiver = None;
+                }
+                Err(_) => {
+                    // No message available, continue
+                }
+            }
+        }
         
         // Poll for events with a timeout to allow UI updates
         if event::poll(Duration::from_millis(100))? {
@@ -116,6 +161,13 @@ fn run_app<B: Backend + 'static>(
                                 app.fetch_movies();
                             }
                         }
+                        KeyCode::Enter => {
+                            // Fetch movie details
+                            if let Some(movie_name) = app.get_selected_movie_name() {
+                                app.current_screen = CurrentScreen::MovieDetail;
+                                app.fetch_movie_detail(movie_name);
+                            }
+                        }
                         KeyCode::Down | KeyCode::Char('j') => {
                             app.next_movie();
                         }
@@ -136,6 +188,19 @@ fn run_app<B: Backend + 'static>(
                     },
                     CurrentScreen::Date => match key.code {
                         KeyCode::Char('q') => return Ok(()),
+                        _ => {}
+                    },
+                    CurrentScreen::MovieDetail => match key.code {
+                        KeyCode::Char('q') => return Ok(()),
+                        KeyCode::Esc | KeyCode::Char('b') => {
+                            app.current_screen = CurrentScreen::Main;
+                            app.selected_movie_detail = None;
+                            app.movie_detail_error = None;
+                            // Clean up poster state
+                            app.poster_protocol = None;
+                            app.loading_poster = false;
+                            app.poster_receiver = None;
+                        }
                         _ => {}
                     },
                     CurrentScreen::Exiting => match key.code {

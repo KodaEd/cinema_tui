@@ -1,7 +1,9 @@
-use crate::app::ritz::{get_ritz_movies, get_ritz_movies_threaded};
+use crate::app::ritz::get_ritz_movies_threaded;
+use crate::app::omd::Welcome;
 
 use chrono::{DateTime, Datelike, Local, TimeZone};
 use ratatui::widgets::ListState;
+use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::fs;
@@ -19,10 +21,21 @@ pub enum MovieFetchMessage {
     Error(String),
 }
 
+pub enum MovieDetailMessage {
+    Complete(Welcome),
+    Error(String),
+}
+
+pub enum PosterMessage {
+    Complete(StatefulProtocol),
+    Error(String),
+}
+
 pub enum CurrentScreen {
     Main,
     Movie,
     Date,
+    MovieDetail,
     Exiting,
 }
 
@@ -39,6 +52,15 @@ pub struct App {
     pub selected_date_index: usize,
     pub available_dates: Vec<DateTime<Local>>,
     pub last_updated: Option<DateTime<Local>>,
+    pub selected_movie_detail: Option<Welcome>,
+    pub loading_movie_detail: bool,
+    pub movie_detail_error: Option<String>,
+    pub omdb_api_key: Option<String>,
+    pub detail_receiver: Option<mpsc::Receiver<MovieDetailMessage>>,
+    pub poster_protocol: Option<StatefulProtocol>,
+    pub loading_poster: bool,
+    pub poster_receiver: Option<mpsc::Receiver<PosterMessage>>,
+    pub picker: Picker,
 }
 
 type MovieTimes = HashMap<String, Vec<DateTime<Local>>>;
@@ -47,6 +69,9 @@ impl App {
     pub fn new() -> Self {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
+
+        // Initialize picker for image rendering - query terminal or fallback to halfblocks
+        let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
 
         let mut app = Self {
             ritz_movie_times: HashMap::new(),
@@ -61,6 +86,15 @@ impl App {
             selected_date_index: 0,
             available_dates: Vec::new(),
             last_updated: None,
+            selected_movie_detail: None,
+            loading_movie_detail: false,
+            movie_detail_error: None,
+            omdb_api_key: std::env::var("OMDB_API_KEY").ok(),
+            detail_receiver: None,
+            poster_protocol: None,
+            loading_poster: false,
+            poster_receiver: None,
+            picker,
         };
 
         // Try to load cached data
@@ -268,5 +302,58 @@ impl App {
 
         movies.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
         movies
+    }
+
+    pub fn get_selected_movie_name(&self) -> Option<String> {
+        let movies = self.get_filtered_movies();
+        movies.get(self.selected_movie_index).map(|(name, _)| name.clone())
+    }
+
+    pub fn fetch_movie_detail(&mut self, movie_name: String) {
+        if self.omdb_api_key.is_none() {
+            self.movie_detail_error = Some("API key not set".to_string());
+            self.loading_movie_detail = false;
+            return;
+        }
+
+        let (sender, receiver) = mpsc::channel();
+        self.detail_receiver = Some(receiver);
+        self.loading_movie_detail = true;
+        self.selected_movie_detail = None;
+        self.movie_detail_error = None;
+
+        let api_key = self.omdb_api_key.clone().unwrap();
+
+        std::thread::spawn(move || {
+            match crate::app::omd::fetch_movie_details(&movie_name, &api_key) {
+                Ok(details) => {
+                    let _ = sender.send(MovieDetailMessage::Complete(details));
+                }
+                Err(e) => {
+                    let _ = sender.send(MovieDetailMessage::Error(e.to_string()));
+                }
+            }
+        });
+    }
+
+    pub fn fetch_poster(&mut self, poster_url: String) {
+        let (sender, receiver) = mpsc::channel();
+        self.poster_receiver = Some(receiver);
+        self.loading_poster = true;
+        self.poster_protocol = None;
+
+        // Clone the picker for the thread
+        let picker = self.picker.clone();
+
+        std::thread::spawn(move || {
+            match crate::app::omd::download_poster(&poster_url, &picker) {
+                Ok(protocol) => {
+                    let _ = sender.send(PosterMessage::Complete(protocol));
+                }
+                Err(e) => {
+                    let _ = sender.send(PosterMessage::Error(e.to_string()));
+                }
+            }
+        });
     }
 }

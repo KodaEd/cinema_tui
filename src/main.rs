@@ -56,6 +56,7 @@ fn run_app<B: Backend + 'static>(
                 }
                 Ok(MovieFetchMessage::Complete(movie_times)) => {
                     app.ritz_movie_times = movie_times;
+                    app.update_available_dates();
                     app.loading_movies = false;
                     app.loading_messages.clear();
                     app.receiver = None;
@@ -118,6 +119,12 @@ fn run_app<B: Backend + 'static>(
                         }
                         KeyCode::Up | KeyCode::Char('k') => {
                             app.previous_movie();
+                        }
+                        KeyCode::Right | KeyCode::Char('l') => {
+                            app.next_date();
+                        }
+                        KeyCode::Left | KeyCode::Char('h') => {
+                            app.previous_date();
                         }
                         _ => {}
                     },

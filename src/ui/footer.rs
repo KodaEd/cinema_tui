@@ -19,7 +19,7 @@ fn get_instruction_text(app: &App) -> &'static str {
                 if app.ritz_movie_times.is_empty() {
                     "(g) to load movies, (m) to search movies, (q) to quit"
                 } else {
-                    "(↑↓/jk) navigate, (g) refresh, (m) search, (q) quit"
+                    "(↑↓/jk) scroll, (←→/hl) change date, (g) refresh, (q) quit"
                 }
             }
             CurrentScreen::Movie => "(d) to search dates, (q) to quit",
